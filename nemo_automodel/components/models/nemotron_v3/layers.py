@@ -135,6 +135,22 @@ class NemotronV3Attention(nn.Module):
             q = q.view(bsz, seqlen, self.num_attention_heads, self.head_dim)
             k = k.view(bsz, seqlen, self.num_key_value_heads, self.head_dim)
             v = v.view(bsz, seqlen, self.num_key_value_heads, self.head_dim)
+            # BSHD attention uses the dense attention_mask, not cu_seqlens. The
+            # hybrid backbone reconstructs cu_seqlens from a 2D mask for Mamba's
+            # seq_idx (model.py) and forwards it to every layer via shared kwargs.
+            # If those THD packing args reach TE here, it switches to varlen/THD
+            # packing and indexes cu_seqlens out of bounds against the padded BSHD
+            # tensor (device-side assert). Drop them so attention stays dense BSHD;
+            # Mamba layers keep their own kwargs copy from the layer loop.
+            for _thd_key in (
+                "cu_seqlens",
+                "cu_seqlens_padded",
+                "max_seqlen",
+                "max_seqlen_q",
+                "max_seqlen_kv",
+                "seq_idx",
+            ):
+                attn_kwargs.pop(_thd_key, None)
 
         q, k, v, _attn_kwargs = preprocess_args_and_kwargs_for_attn(
             q, k, v, attention_mask, self.backend.attn, **attn_kwargs

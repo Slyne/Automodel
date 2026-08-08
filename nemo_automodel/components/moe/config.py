@@ -19,6 +19,7 @@ from typing import Literal, Optional
 
 import torch
 
+from nemo_automodel.components.distributed.config import MoEParallelizerConfig as MoEParallelizerConfig
 from nemo_automodel.shared.utils import dtype_from_str
 
 

@@ -21,6 +21,7 @@ import pytest
 import torch
 
 import nemo_automodel.components.distributed.mesh_utils as mesh_utils
+from nemo_automodel.components.distributed.config import FSDP2Config
 from nemo_automodel.components.distributed.mesh import MeshAxisName, ParallelismSizes
 from nemo_automodel.components.distributed.mesh_utils import (
     _create_fsdp2_device_mesh,
@@ -29,6 +30,7 @@ from nemo_automodel.components.distributed.mesh_utils import (
     _MeshSpec,
     _register_flattened_axes,
     _unflatten_compat,
+    create_device_mesh,
     get_flat_mesh,
     get_fsdp_dp_mesh,
     get_submesh,
@@ -40,11 +42,56 @@ def test_mesh_utils_reexports_mesh_creation_helpers():
     from nemo_automodel.components.distributed import mesh, mesh_utils
     from nemo_automodel.components.distributed.mesh import MeshContext
 
+    assert callable(mesh_utils.create_device_mesh)
     assert callable(mesh_utils._create_device_meshes)
     assert callable(mesh_utils._create_fsdp2_device_mesh)
     assert callable(mesh_utils._create_megatron_fsdp_device_mesh)
     assert not hasattr(MeshContext, "_create_device_meshes")
     assert not hasattr(mesh, "_create_device_meshes")
+
+
+def test_create_device_mesh_compat_wrapper_builds_parallelism_sizes(monkeypatch):
+    captured = {}
+
+    def fake_create_device_meshes(strategy_config, parallelism, **kwargs):
+        captured["strategy_config"] = strategy_config
+        captured["parallelism"] = parallelism
+        captured.update(kwargs)
+        return "device_mesh", "moe_mesh"
+
+    monkeypatch.setattr(mesh_utils, "_create_device_meshes", fake_create_device_meshes)
+
+    config = FSDP2Config()
+    result = create_device_mesh(
+        config,
+        dp_size=4,
+        dp_replicate_size=2,
+        tp_size=2,
+        cp_size=2,
+        world_size=32,
+        timeout_minutes=30,
+    )
+
+    assert result == ("device_mesh", "moe_mesh")
+    assert captured["strategy_config"] is config
+    assert captured["parallelism"] == ParallelismSizes(
+        dp_size=4,
+        dp_replicate_size=2,
+        tp_size=2,
+        pp_size=1,
+        cp_size=2,
+        ep_size=1,
+    )
+    assert captured["world_size"] == 32
+    assert captured["timeout_minutes"] == 30
+    assert captured["ranks"] is None
+
+
+def test_moe_parallelizer_config_compat_import():
+    from nemo_automodel.components.distributed.config import MoEParallelizerConfig as CanonicalConfig
+    from nemo_automodel.components.moe.config import MoEParallelizerConfig as CompatConfig
+
+    assert CompatConfig is CanonicalConfig
 
 
 def test_distributed_package_exports_user_entrypoints():

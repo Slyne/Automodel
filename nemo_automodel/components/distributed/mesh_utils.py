@@ -31,6 +31,7 @@ from nemo_automodel.components.distributed.config import (
 from nemo_automodel.components.distributed.mesh import MeshAxisName, ParallelismSizes
 
 __all__ = [
+    "create_device_mesh",
     "_create_device_meshes",
     "_create_fsdp2_device_mesh",
     "_create_megatron_fsdp_device_mesh",
@@ -100,6 +101,44 @@ def _create_device_meshes(
         return None, None
     else:
         raise ValueError(f"Unknown distributed strategy config type: {type(strategy_config)}")
+
+
+def create_device_mesh(
+    strategy_config: DistributedStrategyConfig,
+    *,
+    dp_size: int | None = None,
+    dp_replicate_size: int | None = None,
+    tp_size: int = 1,
+    pp_size: int = 1,
+    cp_size: int = 1,
+    ep_size: int = 1,
+    world_size: int | None = None,
+    timeout_minutes: int | None = None,
+    ranks: list[int] | tuple[int, ...] | None = None,
+) -> tuple[DeviceMesh | None, DeviceMesh | None]:
+    """Build device meshes from scalar parallelism sizes.
+
+    This compatibility entry point supports callers that have not yet moved
+    to :class:`ParallelismSizes` and ``MeshContext``.
+    """
+    if world_size is None:
+        world_size = dist.get_world_size() if dist.is_available() and dist.is_initialized() else 1
+
+    parallelism = ParallelismSizes(
+        dp_size=dp_size,
+        dp_replicate_size=dp_replicate_size,
+        tp_size=tp_size,
+        pp_size=pp_size,
+        cp_size=cp_size,
+        ep_size=ep_size,
+    )
+    return _create_device_meshes(
+        strategy_config,
+        parallelism,
+        world_size=world_size,
+        timeout_minutes=timeout_minutes,
+        ranks=ranks,
+    )
 
 
 def _infer_dp_size(

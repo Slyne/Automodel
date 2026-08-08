@@ -259,6 +259,17 @@ class NemotronV3StateDictAdapter(MoESplitExpertsStateDictMixin, StateDictAdapter
             new_view_keys = self._view_loaded_native_keys - prior_view_keys
             self._view_loaded_native_keys = prior_view_keys | {f"mtp.{key}" for key in new_view_keys}
 
+            # The shared MoE merge sees MTP with its namespace stripped, so its
+            # in-place-view bookkeeping records keys such as
+            # ``layers.1.mixer.experts.down_projs``.  The checkpoint loader
+            # compares that record against native model keys, where the same
+            # tensor is named ``mtp.layers.1...``.  Restore the namespace here
+            # so a successful zero-copy load is not reported as one missing
+            # plus one unexpected tensor.
+            self._view_loaded_native_keys = {
+                f"mtp.{key}" if key.startswith("layers.") else key for key in self.view_loaded_native_keys
+            }
+
         return merged
 
     def convert_single_tensor_to_hf(self, fqn: str, tensor: Any, **kwargs) -> list[tuple[str, Any]]:
